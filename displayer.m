@@ -1,0 +1,20 @@
+mapIntensities = weightedIntensity(lh.vertices, newVectorslh, xw, T1T2);
+
+m = mapIntensities;
+a = m(m > 0 & m <= 1);
+h = histc(a,0:.01:1); h = h./sum(h);
+c = cumsum(h);
+figure; plot(c)
+
+lims = [0.03 .6];
+figure;
+subplot(1,2,1);
+scatter3(lh.vertices(:,1),lh.vertices(:,2),lh.vertices(:,3),[],mapIntensities);
+axis equal tight; view(-90,0); colormap(jet); caxis(lims); colorbar;
+
+subplot(1,2,2);
+scatter3(lh.vertices(:,1),lh.vertices(:,2),lh.vertices(:,3),[],mapIntensities);
+axis equal tight; view( 90,0); colormap(jet); caxis(lims); colorbar;
+
+
+

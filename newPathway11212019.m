@@ -1,0 +1,142 @@
+function [] = myelinationMaster1125(subjectFolder, slicerDir4102)
+direr = dir(subjectFolder);
+for folderNum = 3:length(direr)
+    try
+        suber = direr(folderNum);
+        subject = suber.name;
+        disp(['Subject is ' subject]);
+        %TP1 Start
+        gunzip([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/brainmask.mgz'])
+        gunzip([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/001.mgz'])
+        [BrainMask,  M1, ~, ~] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/brainmask']);
+        brainheader = fs_read_header([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/brainmask']);
+        cd([slicerDir4102]);
+        system(['./Slicer --launch lib/Slicer-4.10/cli-modules/ResampleScalarVolume -s 1,1,1 ' subjectFolder ...
+            '/' subject '/T1/TP1/TP1fs/mri/orig/001.mgz ' subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/001resliced.mgz']);
+        gunzip([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/001resliced.mgz']);
+        
+        [BrainT1,  M2, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/001resliced']);
+        M2(1,4) = M1(1,4);
+        M2(2,4) = 256 + M1(2,4);
+        M2(3,4) = M1(3,4);
+        
+        BrainT1Nikhil = MatchVolume2Dim(BrainT1, [256 256 256]);
+        save_mgh(BrainT1Nikhil, [subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/T1Padded.mgh'], M2);
+        [BrainT1Aligned,  M3, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/T1Padded.mgh']);
+        brainmask = logical(BrainMask);
+        NoBrain = brainmask.*alignNewVol(BrainT1Aligned);
+        save_mgh(NoBrain, [subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/T1NoBrain.mgh'], M1);
+        system(['./Slicer --launch lib/Slicer-4.10/cli-modules/BRAINSFit --fixedVolume ' subjectFolder '/' subject ...
+            '/T1/TP1/TP1fs/mri/' 'brain.mgz --movingVolume ' subjectFolder '/' subject ...
+            '/T1/TP1/TP1fs/mri/orig/' 'T1NoBrain.mgh --outputVolume ' subjectFolder '/' subject ...
+            '/T1/TP1/TP1fs/mri/orig/'  'TransformedNoBrain.mgh --transformType Rigid ' ...
+            '--samplingPercentage 0.02']);
+        [BrainRegistered,  M4, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/TransformedNoBrain.mgh']);
+        
+        %%%%%%%%%%%%%%%%T2 Volume Time
+        cd([slicerDir4102]);
+        system(['./Slicer --launch lib/Slicer-4.10/cli-modules/ResampleScalarVolume -s 1,1,1 ' subjectFolder '/' subject '/T1/TP1/TP1fs/mri/T2.prenorm.mgz ' subjectFolder '/' subject '/mri/orig/T2Resliced.mgz']);
+        gunzip([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/T2Resliced.mgz']);
+        [BrainT2,  T2M2, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/T2Resliced']);
+        T2M2(1,4) = M1(1,4);
+        T2M2(2,4) = 256 + M1(2,4);
+        T2M2(3,4) = M1(3,4);
+        
+        BrainT2 = MatchVolume2Dim(BrainT2, [256 256 256]);
+        save_mgh(BrainT2, [subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/T2padded.mgh'], T2M2);
+        [BrainT2Aligned,  M3, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/T2padded.mgh']);
+        NoBrainT2 = brainmask.*(BrainT2Aligned);
+        save_mgh(NoBrainT2, [subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/NoBrainT2.mgh'], M1);
+        system(['./Slicer --launch lib/Slicer-4.10/cli-modules/BRAINSFit --fixedVolume ' subjectFolder '/' subject ...
+            '/T1/TP1/TP1fs/mri/' 'brain.mgz --movingVolume ' subjectFolder '/' subject ...
+            '/T1/TP1/TP1fs/mri/orig/' 'NoBrainT2.mgh --outputVolume ' subjectFolder '/' subject ...
+            '/T1/TP1/TP1fs/mri/orig/'  'TransformedNoBrainT2.mgh --transformType Rigid ' ...
+            '--samplingPercentage 0.02']);
+        
+        [TP1BrainRegisteredT2,  M4, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/TransformedNoBrainT2.mgh']);
+        
+        %%%%%%%%%% Ratio Volumes Creating
+        
+        [aparc,  M4, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/aparc.a2009s+aseg']);
+        xw = find(aparc > 11000);
+        notGray = find(aparc < 11000);
+        aparc(notGray) = 0;
+        ratioVolume = BrainRegistered./TP1BrainRegisteredT2;
+        b = find(ratioVolume == inf);
+        ratioVolume2 = ratioVolume;
+        ratioVolume2(b) = 0;
+        b = find(ratioVolume2 > 10);
+        ratioVolume2(b) = 10;
+        b = isnan(ratioVolume2);
+        ratioVolume2(b) = 0;
+        ratioVolume2 = ratioVolume2.*logical(aparc);
+        
+        save_mgh(ratioVolume2, [subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/' timepoint 'ratioVolume.mgh'], M1);
+        
+        %%%%%%% Register timepoints
+        system(['./Slicer --launch lib/Slicer-4.10/cli-modules/BRAINSFit --fixedVolume ' subjectFolder '/' subject ...
+            '/T1/TP1/TP1fs/mri/' 'orig/TP1ratioVolume.mgh --movingVolume ' subjectFolder '/' subjectTP2 ...
+            '/T1/TP1/TP1fs/mri/orig/' 'TP2ratioVolume.mgh --outputVolume ' subjectFolder '/' subjectTP2 ...
+            '/T1/TP1/TP1fs/mri/orig/'  'transformedTP2ratioVolume.mgh --transformType Rigid,ScaleVersor3D,ScaleSkewVersor3D,Affine,BSpline ' ...
+            '--samplingPercentage 0.3']);
+        
+        [TP1ratio,  M4, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subject '/T1/TP1/TP1fs/mri/orig/TP1ratioVolume.mgh']);
+        [TP2ratio,  M4, ~ , ~ ] = fs_load_mgh([subjectFolder '/' subjectTP2 '/T1/TP1/TP1fs/mri/orig/transformedTP2ratioVolume.mgh']);
+        nanSetter = find(TP1ratio == 0);
+        TP1ratio(nanSetter) = NaN;
+        nanSetter = find(TP2ratio == 0);
+        TP2ratio(nanSetter) = NaN;
+        
+        changeRatio = (TP2ratio - TP1ratio)./TP1ratio;
+        view = changeRatio(:,:,130);
+        
+        
+        TP1 = nanmean(TP1ratio, 'all');
+        TP2 = nanmean(TP2ratio, 'all');
+        
+        disp('Processing surfaces');
+        lh = fs_read_surf([subjectFolder '/' subject '/T1/TP1/TP1fs/surf/lh.white']);
+        rh = fs_read_surf([subjectFolder '/' subject '/T1/TP1/TP1fs/surf/rh.white']);
+        newVectorslh = surfAnalysis(lh);            %create vectors for each face and does a bunch of averaging
+        newVectorsrh = surfAnalysis(rh);
+        changeRatio2 = alignNewVolFinal(changeRatio);
+        xw = find(~isnan(changeRatio2));
+        
+        
+        disp('Creating map');
+        TP1mapIntensitieslh = weightedIntensity(lh.vertices, newVectorslh, xw, changeRatio2); %takes vertices, vectors, GM voxels, and T1/T2 matrix
+        TP1mapIntensitiesrh = weightedIntensity(rh.vertices, newVectorsrh, xw, changeRatio2);
+        
+        f = 10;
+        figure; hold on;
+        pt(:,1) = lh.vertices(:,2) + 128.5;
+        pt(:,2) = 128.5 - lh.vertices(:,1);
+        pt(:,3) = 128.5 - lh.vertices(:,3);
+        
+        pt2(:,1) = rh.vertices(:,2) +128.5;
+        pt2(:,2) = 128.5 - rh.vertices(:,1);
+        pt2(:,3) = 128.5 - rh.vertices(:,3);
+        figure; hold on;
+        plot3(pt(1:f:end,1),pt(1:f:end,2),pt(1:f:end,3),'.r');   %White Matter
+        plot3(pt2(1:f:end,1),pt2(1:f:end,2),pt2(1:f:end,3),'.r');  %White Matter
+        xlabel('x');
+        ylabel('y');
+        zlabel('z');
+        
+        [xValu,yValu,zValu] = ind2sub(size(TP1aparc),find(~isnan(changeRatio2)));
+        plot3(xValu(1:f:end),yValu(1:f:end),zValu(1:f:end),'.k');   %White Matter
+        
+        disp('Outputting to ico7 TP1');
+        cd([subjectFolder '/' subject]) %maps to ICO7 from subject space
+        save(['TP1rhmapVals.mat'], 'TP1mapIntensitiesrh');
+        TP1reformater(subjectFolder, subject, 'TP1', 'rh');
+        cd([subjectFolder '/' subject])
+        save(['TP1lhmapVals.mat'], 'TP1mapIntensitieslh');
+        TP1reformater(subjectFolder, subject, 'TP1', 'lh');
+    catch
+        disp('Subject failed');
+    end
+    disp('done');
+end
+end
+
